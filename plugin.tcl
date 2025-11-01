@@ -256,13 +256,13 @@ namespace eval ::plugins::${plugin_name} {
         add_de1_text "off" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button
         add_de1_button "off" {
             ::plugins::dark_at_night::manual_sleep
-        } 2300 20 2540 150 "" -tags dark_at_night_manual_button
+        } 2300 20 2540 150 "-tags dark_at_night_manual_button"
         
         # Add same button to screensaver page
         add_de1_text "saver" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button_saver
         add_de1_button "saver" {
             ::plugins::dark_at_night::manual_sleep
-        } 2300 20 2540 150 "" -tags dark_at_night_manual_button_saver
+        } 2300 20 2540 150 "-tags dark_at_night_manual_button_saver"
 
         return $page_name
     }
