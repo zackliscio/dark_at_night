@@ -131,19 +131,24 @@ namespace eval ::plugins::${plugin_name} {
 
     # Intercept sleep button to activate dark mode during dark hours
     proc intercepted_start_sleep {} {
-        variable manual_sleep_active
-        variable settings
-        
-        # Check if plugin is enabled and we're in dark window
-        if {[info exists settings(enabled)] && $settings(enabled) == 1 && [is_in_dark_window]} {
-            msg -INFO [namespace current] "Sleep button pressed during dark hours - activating dark mode"
-            set manual_sleep_active 1
-            activate_dark_mode
-        } else {
-            # Not in dark window, use original sleep behavior
-            msg -DEBUG [namespace current] "Sleep button pressed outside dark hours - using normal sleep"
-            original_start_sleep
+        # Wrap in catch to ensure sleep button always works even if plugin has errors
+        if {[catch {
+            variable manual_sleep_active
+            variable settings
+            
+            # Check if plugin is enabled and we're in dark window
+            if {[info exists settings(enabled)] && $settings(enabled) == 1 && [is_in_dark_window]} {
+                msg -INFO [namespace current] "Sleep button pressed during dark hours - activating dark mode"
+                set manual_sleep_active 1
+                activate_dark_mode
+                return
+            }
+        } err]} {
+            msg -ERROR [namespace current] "Error in dark mode check: $err - falling back to normal sleep"
         }
+        
+        # Default: use original sleep behavior
+        ::original_start_sleep
     }
 
     # Periodic check for time-based dark mode
