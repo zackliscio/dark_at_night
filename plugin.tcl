@@ -5,7 +5,7 @@ namespace eval ::plugins::${plugin_name} {
     # Plugin metadata - shown in plugin selection page
     variable author "Zack Liscio"
     variable contact "github.com/zackliscio"
-    variable version 1.0
+    variable version 1.1
     variable description "Automatically dims the tablet screen to black at specified times each day, with optional manual sleep button. Touch screen to wake."
     variable name "Dark At Night"
 
@@ -56,36 +56,49 @@ namespace eval ::plugins::${plugin_name} {
             return
         }
 
+        # Check if machine state variables exist and are valid
+        if {![info exists ::de1(state)] || ![info exists ::de1_num_state($::de1(state))]} {
+            msg -DEBUG [namespace current] "Machine state not yet initialized"
+            return
+        }
+
         # Don't activate if machine is actively being used
         if {$::de1_num_state($::de1(state)) != "Idle" && 
             $::de1_num_state($::de1(state)) != "Sleep"} {
-            msg -INFO [namespace current] "Not activating dark mode - machine is active: $::de1_num_state($::de1(state))"
+            msg -DEBUG [namespace current] "Not activating dark mode - machine is active: $::de1_num_state($::de1(state))"
             return
         }
 
         # Don't activate during scheduler's forced-awake window (unless manual sleep)
-        if {$manual_sleep_active == 0 && $::settings(scheduler_enable) == 1} {
-            set wake [current_alarm_time $::settings(scheduler_wake)]
-            set sleep [current_alarm_time $::settings(scheduler_sleep)]
-            if {[clock seconds] > $wake && [clock seconds] < $sleep} {
-                msg -INFO [namespace current] "Not activating dark mode - we are during scheduled forced-awake time"
-                return
+        if {$manual_sleep_active == 0 && [info exists ::settings(scheduler_enable)] && $::settings(scheduler_enable) == 1} {
+            if {[info exists ::settings(scheduler_wake)] && [info exists ::settings(scheduler_sleep)]} {
+                set wake [current_alarm_time $::settings(scheduler_wake)]
+                set sleep [current_alarm_time $::settings(scheduler_sleep)]
+                if {[clock seconds] > $wake && [clock seconds] < $sleep} {
+                    msg -DEBUG [namespace current] "Not activating dark mode - during scheduled forced-awake time"
+                    return
+                }
             }
         }
 
         # Don't activate if not on the off page (unless manual sleep)
-        if {$::de1(current_context) != "off" && $manual_sleep_active == 0} {
+        if {[info exists ::de1(current_context)] && $::de1(current_context) != "off" && $manual_sleep_active == 0} {
             return
         }
 
         # Store current brightness to restore later
-        set stored_brightness $::settings(app_brightness)
+        if {[info exists ::settings(app_brightness)]} {
+            set stored_brightness $::settings(app_brightness)
+        } else {
+            set stored_brightness 50
+        }
         
         # Dim the screen
-        display_brightness $settings(brightness_level)
-        set is_dark_mode 1
-        
-        msg -INFO [namespace current] "Dark mode activated (brightness: $settings(brightness_level))"
+        catch {
+            display_brightness $settings(brightness_level)
+            set is_dark_mode 1
+            msg -INFO [namespace current] "Dark mode activated (brightness: $settings(brightness_level)%)"
+        }
     }
 
     # Deactivate dark mode (restore brightness)
@@ -100,16 +113,20 @@ namespace eval ::plugins::${plugin_name} {
         }
 
         # Restore previous brightness
-        if {$stored_brightness > 0} {
-            display_brightness $stored_brightness
-        } else {
-            display_brightness $::settings(app_brightness)
+        catch {
+            if {$stored_brightness > 0} {
+                display_brightness $stored_brightness
+            } elseif {[info exists ::settings(app_brightness)]} {
+                display_brightness $::settings(app_brightness)
+            } else {
+                display_brightness 50
+            }
         }
         
         set is_dark_mode 0
         set manual_sleep_active 0
         
-        msg -INFO [namespace current] "Dark mode deactivated (brightness restored)"
+        msg -INFO [namespace current] "Dark mode deactivated (brightness restored to $stored_brightness%)"
     }
 
     # Manual sleep button handler
@@ -129,26 +146,33 @@ namespace eval ::plugins::${plugin_name} {
         variable timer_handle
         variable manual_sleep_active
 
+        # Cancel any existing timer first
+        if {$timer_handle != ""} {
+            catch {after cancel $timer_handle}
+        }
+
         # Only run if plugin is enabled
-        if {$settings(enabled) != 1} {
+        if {![info exists settings(enabled)] || $settings(enabled) != 1} {
             # If dark mode is active, deactivate it
             deactivate_dark_mode
             
-            # Reschedule for next check
+            # Reschedule for next check (keep monitoring in case plugin is re-enabled)
             set timer_handle [after 60000 ::plugins::dark_at_night::check_dark_mode_schedule]
             return
         }
 
         # Check if we're in the dark window
-        set in_window [is_in_dark_window]
-        
-        if {$in_window} {
-            # We should be in dark mode
-            activate_dark_mode
-        } else {
-            # We should not be in dark mode (unless manual sleep is active)
-            if {$manual_sleep_active == 0} {
-                deactivate_dark_mode
+        catch {
+            set in_window [is_in_dark_window]
+            
+            if {$in_window} {
+                # We should be in dark mode
+                activate_dark_mode
+            } else {
+                # We should not be in dark mode (unless manual sleep is active)
+                if {$manual_sleep_active == 0} {
+                    deactivate_dark_mode
+                }
             }
         }
 
@@ -206,7 +230,7 @@ namespace eval ::plugins::${plugin_name} {
 
         # Manual sleep button toggle
         add_de1_text $page_name 1380 980 -text [translate "Show manual sleep button"] -font Helv_10_bold -fill "#444444" -anchor "nw" -justify "left"
-        add_de1_widget $page_name checkbutton 1380 1050 {} -text "" -indicatoron true -font Helv_10 -bg #FFFFFF -anchor nw -foreground #4e85f4 -variable ::plugins::dark_at_night::settings(show_manual_button) -borderwidth 0 -highlightthickness 0 -command {save_plugin_settings dark_at_night}
+        add_de1_widget $page_name checkbutton 1380 1050 {} -text "" -indicatoron true -font Helv_10 -bg #FFFFFF -anchor nw -foreground #4e85f4 -variable ::plugins::dark_at_night::settings(show_manual_button) -borderwidth 0 -highlightthickness 0 -command {save_plugin_settings dark_at_night; ::plugins::dark_at_night::update_manual_button_visibility}
 
         # Current time display
         add_de1_variable $page_name 1280 420 -text "" -font Helv_8 -fill "#7f879a" -anchor "center" -textvariable {[translate "Current time:"] [time_format [clock seconds]]}
@@ -227,7 +251,7 @@ namespace eval ::plugins::${plugin_name} {
         add_de1_text "off" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button
         add_de1_button "off" {
             ::plugins::dark_at_night::manual_sleep
-        } 2300 20 2540 150 "" -tags dark_at_night_manual_button
+        } 2300 20 2540 150
 
         return $page_name
     }
@@ -237,24 +261,29 @@ namespace eval ::plugins::${plugin_name} {
         variable settings
         variable timer_handle
 
-        msg [namespace current] "Dark At Night plugin initializing"
-        msg [namespace current] "Settings: enabled=$settings(enabled), start=[format_alarm_time $settings(start_time)], end=[format_alarm_time $settings(end_time)], brightness=$settings(brightness_level)%, manual_button=$settings(show_manual_button)"
+        msg -INFO [namespace current] "Dark At Night plugin initializing"
+        
+        # Log current settings
+        if {[info exists settings(enabled)]} {
+            msg -INFO [namespace current] "Settings: enabled=$settings(enabled), start=[format_alarm_time $settings(start_time)], end=[format_alarm_time $settings(end_time)], brightness=$settings(brightness_level)%, manual_button=$settings(show_manual_button)"
+        }
 
         # Register page change handler to restore brightness on user interaction
         # Using trace on the current_context variable
-        trace add variable ::de1(current_context) write ::plugins::dark_at_night::on_page_change_trace
+        catch {
+            trace add variable ::de1(current_context) write ::plugins::dark_at_night::on_page_change_trace
+        }
 
-        # Start the periodic check
-        set timer_handle [after 60000 ::plugins::dark_at_night::check_dark_mode_schedule]
-
-        # Do an immediate check
-        after 1000 ::plugins::dark_at_night::check_dark_mode_schedule
+        # Do an initial check after a short delay (avoid startup race conditions)
+        after 2000 ::plugins::dark_at_night::check_dark_mode_schedule
 
         # Show/hide manual button based on settings
-        update_manual_button_visibility
+        after 2500 ::plugins::dark_at_night::update_manual_button_visibility
 
         # Register the settings page
         plugins gui dark_at_night [build_ui]
+        
+        msg -INFO [namespace current] "Dark At Night plugin initialized successfully"
     }
 
     # Trace handler for page changes
@@ -266,10 +295,39 @@ namespace eval ::plugins::${plugin_name} {
     proc update_manual_button_visibility {} {
         variable settings
         
+        # Use modern DUI approach for show/hide
         if {$settings(show_manual_button) == 1} {
-            .can itemconfigure dark_at_night_manual_button -state normal
+            catch {
+                dui item show off dark_at_night_manual_button
+            }
         } else {
-            .can itemconfigure dark_at_night_manual_button -state hidden
+            catch {
+                dui item hide off dark_at_night_manual_button
+            }
+        }
+    }
+
+    # Cleanup when plugin is disabled (future-proofing)
+    proc cleanup {} {
+        variable timer_handle
+        variable is_dark_mode
+
+        msg -INFO [namespace current] "Cleaning up Dark At Night plugin"
+
+        # Cancel timer
+        if {$timer_handle != ""} {
+            catch {after cancel $timer_handle}
+            set timer_handle ""
+        }
+
+        # Restore brightness if dark mode is active
+        if {$is_dark_mode == 1} {
+            deactivate_dark_mode
+        }
+
+        # Remove trace
+        catch {
+            trace remove variable ::de1(current_context) write ::plugins::dark_at_night::on_page_change_trace
         }
     }
 }

@@ -71,5 +71,21 @@ Zack Liscio (github.com/zackliscio)
 
 ## Version
 
-1.0
+1.1
+
+## Changelog
+
+### v1.1
+- Fixed critical bug in `add_de1_button` call that prevented plugin from loading
+- Added robust error handling with `info exists` checks for all global variables
+- Improved initialization timing to avoid startup race conditions
+- Added automatic cleanup procedure for proper resource management
+- Enhanced visibility control using modern DUI show/hide functions
+- Added catch blocks around all critical operations for better stability
+- Improved logging with DEBUG and INFO levels
+- Fixed manual button visibility toggle to update immediately when settings change
+- Better timer management to prevent duplicate timers
+
+### v1.0
+- Initial release
 
