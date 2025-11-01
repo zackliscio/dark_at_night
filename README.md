@@ -1,13 +1,13 @@
 # Dark At Night Plugin
 
-Automatically dims the tablet screen to black at specified times each day, with optional manual sleep button. Touch the screen to wake normally.
+Automatically dims the tablet screen to black at specified times each day. The existing sleep button intelligently switches between screensaver and dark mode based on the time of day.
 
 ## Features
 
-- **Time-based Dark Mode**: Automatically dims the screen during configured hours (e.g., 5 PM to 6 AM)
+- **Time-based Dark Mode**: Automatically dims the screen during configured hours (e.g., 10 PM to 6 AM)
+- **Smart Sleep Button**: During dark hours, the sleep button activates dark mode instead of screensaver - one button, context-aware behavior
 - **Scheduler-Aware**: Respects the DE1 scheduler's forced-awake window and won't dim during that time
 - **Customizable Brightness**: Set the brightness level during dark mode (0-100%, default 0 for completely black)
-- **Manual Sleep Button**: Optional button on the idle screen to immediately activate dark mode
 - **Touch to Wake**: Touching the screen restores normal brightness, just like the standard screensaver
 - **Smart Activation**: Only activates when machine is idle or asleep, never during active use
 
@@ -19,25 +19,26 @@ Automatically dims the tablet screen to black at specified times each day, with 
 
 ## Settings
 
-- **Enable time-based dark mode**: Toggle on/off for automatic time-based dimming
-- **Start time**: When to begin dark mode (default: 5:00 PM / 17:00)
-- **End time**: When to stop dark mode (default: 6:00 AM / 06:00)
+- **Enable time-based dark mode**: Toggle on/off for automatic time-based dimming and smart sleep button behavior
+- **Start time**: When to begin dark mode window (default: 10:00 PM / 22:00)
+- **End time**: When to end dark mode window (default: 6:00 AM / 06:00)
 - **Screen brightness during dark mode**: Brightness level 0-100% (default: 0%)
-- **Show manual sleep button**: Display a moon icon button on the idle screen to manually trigger dark mode
 
 ## Usage
 
-### Time-based Mode
+### Automatic Time-based Mode
 1. Enable the plugin and set your preferred start/end times
 2. The screen will automatically dim at the start time each day
 3. Touch the screen anytime to wake and restore brightness
 4. Brightness automatically restores at the end time
 
-### Manual Sleep Button
-1. Enable "Show manual sleep button" in settings
-2. A small moon icon (🌙) appears in the top-right corner of the idle screen
-3. Tap it anytime to immediately dim the screen
-4. Touch anywhere to wake and restore brightness
+### Smart Sleep Button
+The existing sleep button (location varies by skin) now behaves intelligently:
+- **Outside dark hours**: Normal behavior - activates screensaver
+- **During dark hours**: Activates dark mode (black screen) instead
+- **Wake up**: Touch anywhere on the screen to restore brightness
+
+No extra buttons needed - the sleep button just does the right thing based on time of day!
 
 ## Technical Details
 
@@ -53,17 +54,16 @@ enabled 0                  # Plugin disabled by default
 start_time 61200          # 5:00 PM (17:00)
 end_time 21600            # 6:00 AM (06:00)
 brightness_level 0        # Completely black
-show_manual_button 1      # Manual button enabled
 ```
 
 ## Notes
 
 - The plugin respects machine state and won't activate during espresso extraction, steaming, etc.
-- Works independently but cooperatively with the standard DE1 screensaver
-- **Scheduler-aware**: Won't dim the screen during the scheduler's forced-awake window
-- Time window can cross midnight (e.g., 5 PM to 6 AM)
+- Works by intercepting the `start_sleep` function to add smart time-based behavior
+- **Scheduler-aware**: Won't auto-dim during the scheduler's forced-awake window (but manual sleep button still works)
+- Time window can cross midnight (e.g., 10 PM to 6 AM)
 - Brightness is automatically restored when navigating away from the idle screen
-- Manual sleep button works even during forced-awake time if you want to dim the screen anyway
+- The sleep button during dark hours works even during forced-awake time if you want to manually dim the screen
 
 ## Author
 
@@ -71,9 +71,17 @@ Zack Liscio (github.com/zackliscio)
 
 ## Version
 
-1.2
+1.3
 
 ## Changelog
+
+### v1.3
+- **MAJOR IMPROVEMENT:** Removed separate manual button in favor of smart sleep button interception
+- Sleep button now intelligently switches between screensaver (wake hours) and dark mode (dark hours)
+- Cleaner UI with no additional buttons - uses existing sleep button location (skin-dependent)
+- Plugin intercepts `start_sleep` function to add time-aware behavior
+- Removed `show_manual_button` setting (no longer needed)
+- Updated default times to 10 PM - 6 AM (more typical sleep hours)
 
 ### v1.2
 - **CRITICAL FIX:** Removed duplicate `build_ui()` call that prevented Settings page from opening

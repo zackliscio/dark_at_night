@@ -5,8 +5,8 @@ namespace eval ::plugins::${plugin_name} {
     # Plugin metadata - shown in plugin selection page
     variable author "Zack Liscio"
     variable contact "github.com/zackliscio"
-    variable version 1.2
-    variable description "Automatically dims the tablet screen to black at specified times each day, with optional manual sleep button. Touch screen to wake."
+    variable version 1.3
+    variable description "Automatically dims the tablet screen to black at specified times each day. The sleep button intelligently activates dark mode during dark hours or screensaver during wake hours."
     variable name "Dark At Night"
 
     # Plugin settings
@@ -129,15 +129,21 @@ namespace eval ::plugins::${plugin_name} {
         msg -INFO [namespace current] "Dark mode deactivated (brightness restored to $stored_brightness%)"
     }
 
-    # Manual sleep button handler
-    proc manual_sleep {} {
+    # Intercept sleep button to activate dark mode during dark hours
+    proc intercepted_start_sleep {} {
         variable manual_sleep_active
         variable settings
         
-        msg -INFO [namespace current] "Manual sleep button pressed"
-        
-        set manual_sleep_active 1
-        activate_dark_mode
+        # Check if plugin is enabled and we're in dark window
+        if {[info exists settings(enabled)] && $settings(enabled) == 1 && [is_in_dark_window]} {
+            msg -INFO [namespace current] "Sleep button pressed during dark hours - activating dark mode"
+            set manual_sleep_active 1
+            activate_dark_mode
+        } else {
+            # Not in dark window, use original sleep behavior
+            msg -DEBUG [namespace current] "Sleep button pressed outside dark hours - using normal sleep"
+            original_start_sleep
+        }
     }
 
     # Periodic check for time-based dark mode
@@ -233,9 +239,8 @@ namespace eval ::plugins::${plugin_name} {
         add_de1_widget $page_name scale 280 1070 {} -from 0 -to 100 -background #e4d1c1 -borderwidth 1 -bigincrement 10 -showvalue 0 -resolution 1 -length [rescale_x_skin 800] -width [rescale_y_skin 120] -variable ::plugins::dark_at_night::settings(brightness_level) -font Helv_10_bold -sliderlength [rescale_x_skin 100] -relief flat -orient horizontal -foreground #FFFFFF -troughcolor #c0c4e1 -borderwidth 0 -highlightthickness 0 -command {::plugins::dark_at_night::on_slider_change}
         add_de1_variable $page_name 280 1200 -text "" -font Helv_7 -fill "#7f879a" -anchor "nw" -textvariable {$::plugins::dark_at_night::settings(brightness_level)%}
 
-        # Manual sleep button toggle
-        add_de1_text $page_name 1380 980 -text [translate "Show manual sleep button"] -font Helv_10_bold -fill "#444444" -anchor "nw" -justify "left"
-        add_de1_widget $page_name checkbutton 1380 1050 {} -text "" -indicatoron true -font Helv_10 -bg #FFFFFF -anchor nw -foreground #4e85f4 -variable ::plugins::dark_at_night::settings(show_manual_button) -borderwidth 0 -highlightthickness 0 -command {save_plugin_settings dark_at_night; ::plugins::dark_at_night::update_manual_button_visibility}
+        # Info text about sleep button behavior
+        add_de1_text $page_name 1280 1000 -text [translate "During dark hours, the sleep button will activate dark mode instead of screensaver"] -font Helv_8 -fill "#7f879a" -anchor "center" -justify "center" -width 1800
 
         # Current time display
         add_de1_variable $page_name 1280 420 -text "" -font Helv_8 -fill "#7f879a" -anchor "center" -textvariable {[translate "Current time:"] [time_format [clock seconds]]}
@@ -250,20 +255,6 @@ namespace eval ::plugins::${plugin_name} {
         # Build the settings UI
         set page_name [build_ui]
 
-        # Add manual sleep button to the "off" and "saver" pages if enabled
-        # This will be shown/hidden based on settings
-        # Using a small button in the top-right corner
-        add_de1_text "off" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button
-        add_de1_button "off" {
-            ::plugins::dark_at_night::manual_sleep
-        } 2300 20 2540 150 "-tags dark_at_night_manual_button"
-        
-        # Add same button to screensaver page
-        add_de1_text "saver" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button_saver
-        add_de1_button "saver" {
-            ::plugins::dark_at_night::manual_sleep
-        } 2300 20 2540 150 "-tags dark_at_night_manual_button_saver"
-
         return $page_name
     }
 
@@ -276,7 +267,17 @@ namespace eval ::plugins::${plugin_name} {
         
         # Log current settings
         if {[info exists settings(enabled)]} {
-            msg -INFO [namespace current] "Settings: enabled=$settings(enabled), start=[format_alarm_time $settings(start_time)], end=[format_alarm_time $settings(end_time)], brightness=$settings(brightness_level)%, manual_button=$settings(show_manual_button)"
+            msg -INFO [namespace current] "Settings: enabled=$settings(enabled), start=[format_alarm_time $settings(start_time)], end=[format_alarm_time $settings(end_time)], brightness=$settings(brightness_level)%"
+        }
+
+        # Intercept the start_sleep function to add dark mode behavior
+        # Save the original function and replace it with our wrapper
+        if {[info commands ::original_start_sleep] eq ""} {
+            rename ::start_sleep ::original_start_sleep
+            proc ::start_sleep {} {
+                ::plugins::dark_at_night::intercepted_start_sleep
+            }
+            msg -INFO [namespace current] "Intercepted start_sleep function"
         }
 
         # Register page change handler to restore brightness on user interaction
@@ -288,9 +289,6 @@ namespace eval ::plugins::${plugin_name} {
         # Do an initial check after a short delay (avoid startup race conditions)
         after 2000 ::plugins::dark_at_night::check_dark_mode_schedule
 
-        # Show/hide manual button based on settings
-        after 2500 ::plugins::dark_at_night::update_manual_button_visibility
-
         # NOTE: UI registration is already done in preload() which returns the page name
         # The plugin system automatically stores it in ${plugin}::ui_entry
         # No need to call 'plugins gui' here or it will create duplicate UI elements
@@ -301,24 +299,6 @@ namespace eval ::plugins::${plugin_name} {
     # Trace handler for page changes
     proc on_page_change_trace {varname key op} {
         on_page_change "" $::de1(current_context)
-    }
-
-    # Update visibility of manual sleep button
-    proc update_manual_button_visibility {} {
-        variable settings
-        
-        # Use modern DUI approach for show/hide on both off and saver pages
-        if {$settings(show_manual_button) == 1} {
-            catch {
-                dui item show off dark_at_night_manual_button
-                dui item show saver dark_at_night_manual_button_saver
-            }
-        } else {
-            catch {
-                dui item hide off dark_at_night_manual_button
-                dui item hide saver dark_at_night_manual_button_saver
-            }
-        }
     }
 
     # Cleanup when plugin is disabled (future-proofing)
@@ -337,6 +317,13 @@ namespace eval ::plugins::${plugin_name} {
         # Restore brightness if dark mode is active
         if {$is_dark_mode == 1} {
             deactivate_dark_mode
+        }
+
+        # Restore original start_sleep function
+        if {[info commands ::original_start_sleep] ne ""} {
+            rename ::start_sleep ""
+            rename ::original_start_sleep ::start_sleep
+            msg -INFO [namespace current] "Restored original start_sleep function"
         }
 
         # Remove trace
