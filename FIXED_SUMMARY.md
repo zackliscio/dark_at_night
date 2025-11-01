@@ -12,21 +12,34 @@ wrong # args: should be "add_de1_button displaycontexts tclcode x0 y0 x1 y1 ?opt
 ### Error 2: Settings Button Unresponsive
 Plugin showed up in Extensions list, but clicking "Settings" did nothing.
 
-## Root Cause
+## Root Causes
 
+### Error 1 Root Cause
 Line 230 in `plugin.tcl` had incorrect syntax:
 ```tcl
 add_de1_button "off" {
     ::plugins::dark_at_night::manual_sleep
 } 2300 20 2540 150 "" -tags dark_at_night_manual_button
 ```
+The function only accepts 7 parameters, but 8 were being passed.
 
-The function only accepts 7 parameters, but 8 were being passed. The `""` empty string was unnecessary.
+### Error 2 Root Cause  
+Line 284 in `plugin.tcl` was calling `build_ui()` twice:
+```tcl
+# In preload():
+set page_name [build_ui]
+return $page_name
+
+# In main():
+plugins gui dark_at_night [build_ui]  # DUPLICATE - breaks page registration
+```
+The plugin system automatically captures the return value from `preload()`, so calling it again in `main()` created duplicate UI elements.
 
 ## What Was Fixed
 
-### ✅ CRITICAL (Prevented Loading)
-1. **Fixed `add_de1_button` call** - Removed the extra `""` parameter
+### ✅ CRITICAL (Prevented Loading/Settings Page)
+1. **Fixed `add_de1_button` call** - Removed the extra `""` parameter that prevented plugin from loading
+2. **Fixed duplicate `build_ui()` call** - Removed call from `main()` that broke Settings page
 
 ### ✅ HIGH PRIORITY (Crash Prevention)
 2. **Added error handling** for uninitialized global variables (`::de1(state)`, `::settings(app_brightness)`, etc.)
