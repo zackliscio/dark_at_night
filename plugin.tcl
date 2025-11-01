@@ -5,7 +5,7 @@ namespace eval ::plugins::${plugin_name} {
     # Plugin metadata - shown in plugin selection page
     variable author "Zack Liscio"
     variable contact "github.com/zackliscio"
-    variable version 1.1
+    variable version 1.2
     variable description "Automatically dims the tablet screen to black at specified times each day, with optional manual sleep button. Touch screen to wake."
     variable name "Dark At Night"
 
@@ -280,8 +280,9 @@ namespace eval ::plugins::${plugin_name} {
         # Show/hide manual button based on settings
         after 2500 ::plugins::dark_at_night::update_manual_button_visibility
 
-        # Register the settings page
-        plugins gui dark_at_night [build_ui]
+        # NOTE: UI registration is already done in preload() which returns the page name
+        # The plugin system automatically stores it in ${plugin}::ui_entry
+        # No need to call 'plugins gui' here or it will create duplicate UI elements
         
         msg -INFO [namespace current] "Dark At Night plugin initialized successfully"
     }

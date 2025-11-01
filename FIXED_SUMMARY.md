@@ -1,12 +1,16 @@
 # Dark At Night Plugin - Bug Fixes Summary
 
-## The Error You Saw
+## The Errors You Saw
 
+### Error 1: Plugin Failed to Load
 ```
 dark_at_night:The plugin could not be loaded. Disabled
 
 wrong # args: should be "add_de1_button displaycontexts tclcode x0 y0 x1 y1 ?options?"
 ```
+
+### Error 2: Settings Button Unresponsive
+Plugin showed up in Extensions list, but clicking "Settings" did nothing.
 
 ## Root Cause
 

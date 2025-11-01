@@ -1,8 +1,31 @@
 # Dark At Night Plugin - Bug Fixes & Improvements
 
-## Critical Bug Fixed
+## Critical Bugs Fixed
 
-### Issue 1: Incorrect `add_de1_button` Syntax (BLOCKING)
+### Issue 1: Duplicate `build_ui()` Call Breaking Settings Page (BLOCKING)
+**Location:** Line 284 in `plugin.tcl`  
+**Discovered:** User reported Settings button unresponsive
+
+**Problem:**
+- The `build_ui()` function was being called **twice**:
+  1. In `preload()` at line 246 - returns page name
+  2. In `main()` at line 284 - called `plugins gui dark_at_night [build_ui]`
+- The plugin system automatically stores the return value from `preload()` in `${plugin}::ui_entry`
+- Calling `build_ui()` again in `main()` creates duplicate UI elements and breaks page registration
+- This prevented the Settings page from opening when clicked in Extensions menu
+
+**Fix:**
+Removed the `plugins gui dark_at_night [build_ui]` call from `main()`. The UI registration is already handled by returning the page name from `preload()`.
+
+**How Plugin System Works:**
+```tcl
+# From plugins.tcl lines 152-154:
+if {[info proc ${plugin}::preload] != ""} {
+    set ${plugin}::ui_entry [${plugin}::preload]  # Captures the returned page name
+}
+```
+
+### Issue 2: Incorrect `add_de1_button` Syntax (BLOCKING)
 **Location:** Line 228-230 in `plugin.tcl`
 
 **Original Code:**
@@ -246,7 +269,7 @@ after 2000 ::plugins::dark_at_night::check_dark_mode_schedule
 
 ## Summary
 
-**Total Issues Fixed:** 8 (1 critical, 3 high, 3 medium, 1 low)
+**Total Issues Fixed:** 9 (2 critical, 3 high, 3 medium, 1 low)
 
 **Lines Changed:** ~50 lines modified/added
 

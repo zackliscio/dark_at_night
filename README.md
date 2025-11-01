@@ -71,9 +71,14 @@ Zack Liscio (github.com/zackliscio)
 
 ## Version
 
-1.1
+1.2
 
 ## Changelog
+
+### v1.2
+- **CRITICAL FIX:** Removed duplicate `build_ui()` call that prevented Settings page from opening
+- The UI was being built twice (once in `preload()`, once in `main()`), breaking page registration
+- Settings button now works correctly when clicked in Extensions menu
 
 ### v1.1
 - Fixed critical bug in `add_de1_button` call that prevented plugin from loading
