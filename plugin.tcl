@@ -250,13 +250,19 @@ namespace eval ::plugins::${plugin_name} {
         # Build the settings UI
         set page_name [build_ui]
 
-        # Add manual sleep button to the "off" page if enabled
+        # Add manual sleep button to the "off" and "saver" pages if enabled
         # This will be shown/hidden based on settings
         # Using a small button in the top-right corner
         add_de1_text "off" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button
         add_de1_button "off" {
             ::plugins::dark_at_night::manual_sleep
-        } 2300 20 2540 150
+        } 2300 20 2540 150 "" -tags dark_at_night_manual_button
+        
+        # Add same button to screensaver page
+        add_de1_text "saver" 2450 50 -text "🌙" -font Helv_10_bold -fill "#7f879a" -anchor "ne" -tags dark_at_night_manual_button_saver
+        add_de1_button "saver" {
+            ::plugins::dark_at_night::manual_sleep
+        } 2300 20 2540 150 "" -tags dark_at_night_manual_button_saver
 
         return $page_name
     }
@@ -301,14 +307,16 @@ namespace eval ::plugins::${plugin_name} {
     proc update_manual_button_visibility {} {
         variable settings
         
-        # Use modern DUI approach for show/hide
+        # Use modern DUI approach for show/hide on both off and saver pages
         if {$settings(show_manual_button) == 1} {
             catch {
                 dui item show off dark_at_night_manual_button
+                dui item show saver dark_at_night_manual_button_saver
             }
         } else {
             catch {
                 dui item hide off dark_at_night_manual_button
+                dui item hide saver dark_at_night_manual_button_saver
             }
         }
     }
