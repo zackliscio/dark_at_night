@@ -1,15 +1,17 @@
 # Dark At Night Plugin
 
-Automatically dims the tablet screen to black at specified times each day. The existing sleep button intelligently switches between screensaver and dark mode based on the time of day.
+Activates screensaver/sleep mode with a **dimmed/black screen** during dark hours instead of bright screensaver images. Machine goes to standby normally, but screen is black to avoid disturbing sleep.
 
 ## Features
 
-- **Time-based Dark Mode**: Automatically dims the screen during configured hours (e.g., 10 PM to 6 AM)
-- **Smart Sleep Button**: During dark hours, the sleep button activates dark mode instead of screensaver - one button, context-aware behavior
-- **Scheduler-Aware**: Respects the DE1 scheduler's forced-awake window and won't dim during that time
-- **Customizable Brightness**: Set the brightness level during dark mode (0-100%, default 0 for completely black)
-- **Touch to Wake**: Touching the screen restores normal brightness, just like the standard screensaver
-- **Smart Activation**: Only activates when machine is idle or asleep, never during active use
+- **Screensaver with Black Screen**: Machine goes to sleep/standby normally, but screen is completely black instead of showing bright images
+- **Time-based Activation**: During dark hours (default 2 PM - 6 AM), sleep button activates black screensaver
+- **Smart Sleep Button**: Outside dark hours, normal colorful screensaver; during dark hours, black screen
+- **Scheduler-Aware**: Respects the DE1 scheduler's forced-awake window
+- **Customizable Brightness**: Set the screen brightness during sleep (0-100%, default 0 for completely black)
+- **Proper Sleep Mode**: Machine actually goes to standby/sleep (turns off heater, etc.) - not just dimming the screen
+- **Wake Normally**: Touch screen to wake - everything works as usual
+- **Manual Button** (optional): Can be enabled in setup file for instant black screensaver activation
 
 ## Installation
 
@@ -20,25 +22,36 @@ Automatically dims the tablet screen to black at specified times each day. The e
 ## Settings
 
 - **Enable time-based dark mode**: Toggle on/off for automatic time-based dimming and smart sleep button behavior
-- **Start time**: When to begin dark mode window (default: 10:00 PM / 22:00)
+- **Start time**: When to begin dark mode window (default: 2:00 PM / 14:00)
 - **End time**: When to end dark mode window (default: 6:00 AM / 06:00)
 - **Screen brightness during dark mode**: Brightness level 0-100% (default: 0%)
 
 ## Usage
 
-### Automatic Time-based Mode
-1. Enable the plugin and set your preferred start/end times
-2. The screen will automatically dim at the start time each day
-3. Touch the screen anytime to wake and restore brightness
-4. Brightness automatically restores at the end time
+### Automatic Time-based Sleep
+1. Enable the plugin and set your preferred start/end times (default: 2 PM - 6 AM)
+2. During dark hours, auto-schedule activates screensaver with black screen
+3. Touch the screen anytime to wake
+4. Outside dark hours, screensaver returns to normal brightness
 
 ### Smart Sleep Button
-The existing sleep button (location varies by skin) now behaves intelligently:
-- **Outside dark hours**: Normal behavior - activates screensaver
-- **During dark hours**: Activates dark mode (black screen) instead
-- **Wake up**: Touch anywhere on the screen to restore brightness
+The existing sleep button now behaves intelligently based on time:
+- **Outside dark hours**: Normal screensaver (images at normal brightness)
+- **During dark hours**: Black screensaver (0% brightness, no images)
+- **Both modes**: Machine properly goes to sleep/standby
+- **Wake up**: Touch screen - everything returns to normal
 
-No extra buttons needed - the sleep button just does the right thing based on time of day!
+**The key difference:** During dark hours, the screensaver screen is BLACK instead of showing bright images!
+
+### Optional Manual Button
+
+The manual dark mode button is **disabled by default** because it blocks part of the screen. The plugin works great with just the smart sleep button and auto-schedule.
+
+**To re-enable the manual button:**
+1. Open `setup_Streamline_Dark.tcl` (or `setup_Streamline.tcl`)
+2. Uncomment lines 14-28 (the button creation code)
+3. Restart the DE1 app
+4. You'll see a "⬛ DARK MODE ⬛" button in the bottom-right corner
 
 ## Technical Details
 
@@ -51,7 +64,7 @@ No extra buttons needed - the sleep button just does the right thing based on ti
 
 ```tcl
 enabled 0                  # Plugin disabled by default
-start_time 61200          # 5:00 PM (17:00)
+start_time 50400          # 2:00 PM (14:00)
 end_time 21600            # 6:00 AM (06:00)
 brightness_level 0        # Completely black
 ```
@@ -61,7 +74,7 @@ brightness_level 0        # Completely black
 - The plugin respects machine state and won't activate during espresso extraction, steaming, etc.
 - Works by intercepting the `start_sleep` function to add smart time-based behavior
 - **Scheduler-aware**: Won't auto-dim during the scheduler's forced-awake window (but manual sleep button still works)
-- Time window can cross midnight (e.g., 10 PM to 6 AM)
+- Time window can cross midnight (e.g., 2 PM to 6 AM)
 - Brightness is automatically restored when navigating away from the idle screen
 - The sleep button during dark hours works even during forced-awake time if you want to manually dim the screen
 
@@ -71,9 +84,82 @@ Zack Liscio (github.com/zackliscio)
 
 ## Version
 
-1.3
+2.3.1
 
 ## Changelog
+
+### v2.3.1
+- **UI:** Manual button disabled by default (commented out in setup files)
+- Button code preserved for easy re-enabling if needed
+- Plugin works perfectly with just smart sleep button and auto-schedule
+
+### v2.3
+- **CRITICAL FIX:** Now sets `screen_saver_change_interval` to 0 for TRUE black screensaver
+- **FIX:** Saves and restores BOTH `screen_saver_change_interval` and `saver_brightness`
+- The screensaver has two modes: interval=0 (black screen) or interval>0 (show images)
+- We need to set interval=0 to activate black screensaver mode, not just change brightness
+- After wake, both settings are restored automatically
+- This is the fix that actually makes the screen go BLACK during sleep!
+- **UI:** Manual button disabled by default (code commented out but can be re-enabled)
+
+### v2.2
+- **MAJOR FIX:** Now actually activates SCREENSAVER/SLEEP MODE (machine goes to standby)
+- **CORRECT BEHAVIOR:** Temporarily sets `saver_brightness` to dim/black, then activates screensaver
+- Machine properly goes to sleep/standby (heater off, etc.) with black screen
+- Manual button now activates screensaver with black screen (not just dimming)
+- Auto-schedule now calls `show_going_to_sleep_page` to properly put machine to sleep
+- Fixed fundamental misunderstanding of what the plugin should do
+
+### v2.0
+- **CRITICAL FIX:** Fixed `rounded_rectangle` error - now uses canvas directly
+- **IMPROVEMENT:** Button creation now works on all skins without dependencies
+- Manually creates rounded rectangle using canvas ovals and rectangles
+- More reliable and compatible across different DE1 app versions
+
+### v1.9
+- **SETTINGS:** Changed default start time from 5:00 PM to 2:00 PM for easier testing
+- **DEBUGGING:** Added comprehensive logging for sleep button and auto-schedule
+- **FIX:** Fixed variable scoping in `intercepted_start_sleep` (variables were inside catch block)
+- **IMPROVEMENT:** Better error messages show why dark mode isn't activating
+- Logs now show: current time, dark window, whether conditions are met
+- Use DE1 app logs to diagnose issues
+
+### v1.8
+- **CRITICAL FIX:** Button now actually clickable! Switched from DUI to standard DE1 button system
+- Uses `rounded_rectangle` for button background (matches Streamline style)
+- More reliable button creation using proven DE1 app methods
+- Works consistently across plugin load timing
+
+### v1.7
+- **UI FIX:** Fixed overlapping text on settings screen
+- Improved layout spacing for better readability
+- Shortened info text to fit properly: "Tip: The sleep button activates dark mode during dark hours"
+- Fixed DUI button command handler to ensure button clicks work properly
+
+### v1.6
+- **MAJOR IMPROVEMENT:** Skin-specific button positioning (following DYE plugin pattern)
+- **NEW:** Dedicated setup files for Streamline and Streamline Dark skins
+- Button now positioned correctly using each skin's native button system
+- Streamline: Uses DUI (Decent User Interface) system with proper styling
+- Button appears at (1870, 66) to (2070, 155) - perfectly aligned with Settings/Sleep buttons
+- Fallback positioning for skins without specific setup files
+- Easier for skin developers to add custom positioning
+
+### v1.5
+- **CRITICAL FIX:** Button now appears on zoomed pages (off_zoomed, etc.)
+- **CRITICAL FIX:** Auto-dimming now works on all off page variants (off, off_zoomed, off_*, saver)
+- **CRITICAL FIX:** Resolution-independent button positioning (works on 2560x1600 and 1280x800)
+- **CRITICAL FIX:** Proper button cleanup - removes both icon and button
+- **IMPROVEMENT:** Added screensaver brightness override to prevent conflicts
+- **IMPROVEMENT:** Added audio feedback when pressing dark mode button
+- Button now uses relative positioning (73% width, 4% height from top-left)
+
+### v1.4
+- **CRITICAL FIX:** Auto-dimming now works on screensaver page (was only working on "off" page)
+- **NEW FEATURE:** Added manual dark mode button on main "off" page (moon icon ☾)
+- Manual button allows instant dark mode activation anytime, regardless of schedule
+- Both features work together: auto-schedule + manual button for maximum flexibility
+- Button positioned to the left of typical sleep button location
 
 ### v1.3
 - **MAJOR IMPROVEMENT:** Removed separate manual button in favor of smart sleep button interception
@@ -81,7 +167,7 @@ Zack Liscio (github.com/zackliscio)
 - Cleaner UI with no additional buttons - uses existing sleep button location (skin-dependent)
 - Plugin intercepts `start_sleep` function to add time-aware behavior
 - Removed `show_manual_button` setting (no longer needed)
-- Updated default times to 10 PM - 6 AM (more typical sleep hours)
+- Updated default times to 2 PM - 6 AM (for easier testing and daytime use)
 
 ### v1.2
 - **CRITICAL FIX:** Removed duplicate `build_ui()` call that prevented Settings page from opening
