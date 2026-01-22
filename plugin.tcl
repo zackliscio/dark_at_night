@@ -5,7 +5,7 @@ namespace eval ::plugins::${plugin_name} {
     # Plugin metadata - shown in plugin selection page
     variable author "Zack Liscio"
     variable contact "github.com/zackliscio"
-    variable version 2.3
+    variable version 2.9
     variable description "Activates screensaver/sleep mode with dimmed screen during dark hours. Machine goes to standby with black screen instead of bright screensaver images."
     variable name "Dark At Night"
 
@@ -90,34 +90,34 @@ namespace eval ::plugins::${plugin_name} {
             }
         }
 
-        # Save current screensaver settings
-        if {[info exists ::settings(screen_saver_change_interval)]} {
+        # Save current screensaver settings ONLY if not already in black mode
+        # This prevents saving black-mode values if we're called while already dimmed
+        if {[info exists ::settings(screen_saver_change_interval)] && $::settings(screen_saver_change_interval) != 0} {
             set saved_saver_interval $::settings(screen_saver_change_interval)
-        } else {
-            set saved_saver_interval 5
+            msg -DEBUG [namespace current] "Saved screen_saver_change_interval: $saved_saver_interval"
         }
         
-        if {[info exists ::settings(saver_brightness)]} {
+        if {[info exists ::settings(saver_brightness)] && $::settings(saver_brightness) > $settings(brightness_level)} {
             set saved_saver_brightness $::settings(saver_brightness)
-        } else {
-            set saved_saver_brightness 100
+            msg -DEBUG [namespace current] "Saved saver_brightness: $saved_saver_brightness"
         }
         
         # Set to black screensaver mode
         set ::settings(screen_saver_change_interval) 0
         set ::settings(saver_brightness) $settings(brightness_level)
         
-        # Activate the screensaver (puts machine to sleep AND shows black screen)
-        msg -INFO [namespace current] "Auto-activating BLACK screensaver (interval=0, brightness=$settings(brightness_level)%)"
-        show_going_to_sleep_page
-        
-        # Restore settings after wake
-        after 3000 {
-            set ::settings(screen_saver_change_interval) $::plugins::dark_at_night::saved_saver_interval
-            set ::settings(saver_brightness) $::plugins::dark_at_night::saved_saver_brightness
-            msg "Dark At Night: Restored screensaver settings (auto-schedule)"
+        # Check if already on screensaver - if so, update brightness directly
+        if {[info exists ::de1(current_context)] && $::de1(current_context) == "saver"} {
+            # Already on screensaver - just update brightness directly
+            msg -INFO [namespace current] "Already on screensaver - switching to BLACK (brightness=0)"
+            catch { display_brightness 0 }
+        } else {
+            # Not on screensaver - activate it (puts machine to sleep AND shows black screen)
+            msg -INFO [namespace current] "Auto-activating BLACK screensaver (interval=0, brightness=$settings(brightness_level)%)"
+            show_going_to_sleep_page
         }
         
+        # Mark that we're in dark mode - settings will be restored via on_page_change when user wakes
         set is_dark_mode 1
     }
 
@@ -132,15 +132,23 @@ namespace eval ::plugins::${plugin_name} {
             return
         }
 
-        # Restore screensaver settings
-        if {[info exists saved_saver_interval]} {
+        # Restore screensaver settings only if we have valid saved values
+        if {$saved_saver_interval > 0} {
             set ::settings(screen_saver_change_interval) $saved_saver_interval
             msg -INFO [namespace current] "Restored screen_saver_change_interval to $saved_saver_interval"
         }
         
-        if {[info exists saved_saver_brightness]} {
+        if {$saved_saver_brightness > 0} {
             set ::settings(saver_brightness) $saved_saver_brightness
             msg -INFO [namespace current] "Restored saver_brightness to $saved_saver_brightness%"
+        }
+        
+        # If currently on screensaver, update the display brightness immediately
+        if {[info exists ::de1(current_context)] && $::de1(current_context) == "saver"} {
+            if {$saved_saver_brightness > 0} {
+                msg -INFO [namespace current] "On screensaver - updating display to brightness $saved_saver_brightness%"
+                catch { display_brightness $saved_saver_brightness }
+            }
         }
         
         set is_dark_mode 0
@@ -148,13 +156,14 @@ namespace eval ::plugins::${plugin_name} {
         msg -INFO [namespace current] "Dark mode deactivated"
     }
 
-    # Intercept sleep button to activate screensaver with black screen during dark hours
-    proc intercepted_start_sleep {} {
+    # Intercept show_going_to_sleep_page to set settings BEFORE page change
+    # This is critical because saver_page_onload reads settings when page loads
+    proc intercepted_show_going_to_sleep_page {} {
         variable settings
         variable saved_saver_interval
         variable saved_saver_brightness
         
-        msg "Dark At Night: Sleep button pressed"
+        msg "Dark At Night: show_going_to_sleep_page intercepted"
         
         # Check if plugin is enabled
         set enabled 0
@@ -164,62 +173,77 @@ namespace eval ::plugins::${plugin_name} {
         
         if {$enabled != 1} {
             msg "Dark At Night: Plugin disabled - normal sleep"
-            ::original_start_sleep
+            ::original_show_going_to_sleep_page
             return
         }
         
-        # Check if we're in dark window
+        # Check if we're in dark window - use a flag to avoid return inside catch
+        set in_window 0
+        set check_error ""
+        
         if {[catch {
             set in_window [is_in_dark_window]
             msg "Dark At Night: In dark window: $in_window"
-            
-            if {$in_window} {
-                msg "Dark At Night: Activating screensaver with BLACK screen (dark hours)"
-                
-                # Save current screensaver settings
-                if {[info exists ::settings(screen_saver_change_interval)]} {
-                    set saved_saver_interval $::settings(screen_saver_change_interval)
-                } else {
-                    set saved_saver_interval 5
-                }
-                
-                if {[info exists ::settings(saver_brightness)]} {
-                    set saved_saver_brightness $::settings(saver_brightness)
-                } else {
-                    set saved_saver_brightness 100
-                }
-                
-                # Set to black screensaver mode (interval=0 means black screen)
-                set ::settings(screen_saver_change_interval) 0
-                set ::settings(saver_brightness) $settings(brightness_level)
-                
-                msg "Dark At Night: Set screensaver to BLACK mode (interval=0, brightness=$settings(brightness_level))"
-                
-                # Now activate normal sleep/screensaver (machine goes to standby, screen is black)
-                ::original_start_sleep
-                
-                # Restore original settings after wake (delay to let screensaver activate first)
-                after 3000 {
-                    set ::settings(screen_saver_change_interval) $::plugins::dark_at_night::saved_saver_interval
-                    set ::settings(saver_brightness) $::plugins::dark_at_night::saved_saver_brightness
-                    msg "Dark At Night: Restored screensaver settings"
-                }
-                return
-            }
-        } err]} {
-            msg "Dark At Night: Error checking window: $err"
+        } check_error]} {
+            msg "Dark At Night: Error checking window: $check_error"
+            set in_window 0
         }
         
-        # Default: normal sleep with normal screensaver
+        if {$in_window} {
+            msg "Dark At Night: Activating screensaver with BLACK screen (dark hours)"
+            
+            # Save current screensaver settings ONLY if not already in black mode
+            # This prevents saving black-mode values if sleep is pressed repeatedly
+            if {[info exists ::settings(screen_saver_change_interval)] && $::settings(screen_saver_change_interval) != 0} {
+                set saved_saver_interval $::settings(screen_saver_change_interval)
+                msg "Dark At Night: Saved screen_saver_change_interval: $saved_saver_interval"
+            }
+            
+            if {[info exists ::settings(saver_brightness)] && $::settings(saver_brightness) > $settings(brightness_level)} {
+                set saved_saver_brightness $::settings(saver_brightness)
+                msg "Dark At Night: Saved saver_brightness: $saved_saver_brightness"
+            }
+            
+            # Set to black screensaver mode (interval=0 means black screen)
+            set ::settings(screen_saver_change_interval) 0
+            set ::settings(saver_brightness) $settings(brightness_level)
+            
+            msg "Dark At Night: Set screensaver to BLACK mode (interval=0, brightness=$settings(brightness_level))"
+            
+            # Mark that we're in dark mode - settings will be restored via on_page_change when user wakes
+            set ::plugins::dark_at_night::is_dark_mode 1
+            
+            # Now activate normal sleep/screensaver (settings are already set, page change will read them)
+            ::original_show_going_to_sleep_page
+            return
+        }
+        
+        # Default: normal sleep with normal screensaver (NOT black screen)
         msg "Dark At Night: Normal screensaver (outside dark hours)"
-        ::original_start_sleep
+        
+        # Ensure screensaver settings are NOT in black mode
+        # This handles cases where settings may have been left in black mode
+        # from a previous dark mode activation
+        # Only restore if interval is 0 (black screen) AND we have a valid saved value
+        if {[info exists ::settings(screen_saver_change_interval)] && $::settings(screen_saver_change_interval) == 0 && $saved_saver_interval > 0} {
+            set ::settings(screen_saver_change_interval) $saved_saver_interval
+            msg "Dark At Night: Restored screen_saver_change_interval to $::settings(screen_saver_change_interval) for wake hours"
+        }
+        
+        # Restore brightness to saved value (user's preference) if we have one
+        # Only restore if we actually saved a value during a previous dark mode activation
+        if {[info exists ::settings(saver_brightness)] && $saved_saver_brightness > 0} {
+            set ::settings(saver_brightness) $saved_saver_brightness
+            msg "Dark At Night: Restored saver_brightness to $::settings(saver_brightness)% for wake hours"
+        }
+        
+        ::original_show_going_to_sleep_page
     }
 
     # Periodic check for time-based dark mode
     proc check_dark_mode_schedule {} {
         variable settings
         variable timer_handle
-        variable manual_sleep_active
 
         # Cancel any existing timer first
         if {$timer_handle != ""} {
@@ -249,13 +273,9 @@ namespace eval ::plugins::${plugin_name} {
                 msg -DEBUG [namespace current] "Auto-schedule: Should be in dark mode - activating"
                 activate_dark_mode
             } else {
-                # We should not be in dark mode (unless manual sleep is active)
-                if {$manual_sleep_active == 0} {
-                    msg -DEBUG [namespace current] "Auto-schedule: Should not be in dark mode - deactivating"
-                    deactivate_dark_mode
-                } else {
-                    msg -DEBUG [namespace current] "Auto-schedule: Manual sleep active, not deactivating"
-                }
+                # Dark window ended - deactivate if active
+                msg -DEBUG [namespace current] "Auto-schedule: Outside dark window - deactivating"
+                deactivate_dark_mode
             }
         }
 
@@ -266,12 +286,12 @@ namespace eval ::plugins::${plugin_name} {
     # Hook into page changes to restore brightness when user interacts
     proc on_page_change {page_to_hide page_to_show} {
         variable is_dark_mode
-        variable manual_sleep_active
 
         # If we're in dark mode and user navigates away from idle/screensaver pages, restore brightness
         # Check if new page is NOT an off variant or saver
         if {$is_dark_mode == 1} {
             if {$page_to_show != "off" && $page_to_show != "saver" && ![string match "off_*" $page_to_show]} {
+                msg -DEBUG [namespace current] "User woke from dark mode - restoring settings"
                 deactivate_dark_mode
             }
         }
@@ -300,17 +320,16 @@ namespace eval ::plugins::${plugin_name} {
         
         msg "Dark At Night: Manual button pressed - activating screensaver with black screen"
         
-        # Save current screensaver settings
-        if {[info exists ::settings(screen_saver_change_interval)]} {
+        # Save current screensaver settings ONLY if not already in black mode
+        # This prevents saving black-mode values if button is pressed repeatedly
+        if {[info exists ::settings(screen_saver_change_interval)] && $::settings(screen_saver_change_interval) != 0} {
             set saved_saver_interval $::settings(screen_saver_change_interval)
-        } else {
-            set saved_saver_interval 5
+            msg "Dark At Night: Saved screen_saver_change_interval: $saved_saver_interval"
         }
         
-        if {[info exists ::settings(saver_brightness)]} {
+        if {[info exists ::settings(saver_brightness)] && $::settings(saver_brightness) > 0} {
             set saved_saver_brightness $::settings(saver_brightness)
-        } else {
-            set saved_saver_brightness 100
+            msg "Dark At Night: Saved saver_brightness: $saved_saver_brightness"
         }
         
         # Set to black screensaver mode
@@ -319,15 +338,11 @@ namespace eval ::plugins::${plugin_name} {
         
         msg "Dark At Night: Set screensaver to BLACK mode (interval=0, brightness=0)"
         
+        # Mark that we're in dark mode - settings will be restored via on_page_change when user wakes
+        set is_dark_mode 1
+        
         # Activate screensaver (puts machine to sleep)
         show_going_to_sleep_page
-        
-        # Restore settings after wake
-        after 3000 {
-            set ::settings(screen_saver_change_interval) $::plugins::dark_at_night::saved_saver_interval
-            set ::settings(saver_brightness) $::plugins::dark_at_night::saved_saver_brightness
-            msg "Dark At Night: Restored screensaver settings"
-        }
         
         msg "Dark At Night: Screensaver activated with black screen"
     }
@@ -447,14 +462,14 @@ namespace eval ::plugins::${plugin_name} {
             }
         }
 
-        # Intercept the start_sleep function to add dark mode behavior
-        # Save the original function and replace it with our wrapper
-        if {[info commands ::original_start_sleep] eq ""} {
-            rename ::start_sleep ::original_start_sleep
-            proc ::start_sleep {} {
-                ::plugins::dark_at_night::intercepted_start_sleep
+        # Intercept show_going_to_sleep_page to set settings BEFORE page change
+        # This is critical because saver_page_onload reads settings when page loads
+        if {[info commands ::original_show_going_to_sleep_page] eq ""} {
+            rename ::show_going_to_sleep_page ::original_show_going_to_sleep_page
+            proc ::show_going_to_sleep_page {} {
+                ::plugins::dark_at_night::intercepted_show_going_to_sleep_page
             }
-            msg -INFO [namespace current] "Intercepted start_sleep function"
+            msg -INFO [namespace current] "Intercepted show_going_to_sleep_page function"
         }
 
         # Register page change handler to restore brightness on user interaction
@@ -512,11 +527,11 @@ namespace eval ::plugins::${plugin_name} {
             }
         }
 
-        # Restore original start_sleep function
-        if {[info commands ::original_start_sleep] ne ""} {
-            rename ::start_sleep ""
-            rename ::original_start_sleep ::start_sleep
-            msg -INFO [namespace current] "Restored original start_sleep function"
+        # Restore original show_going_to_sleep_page function
+        if {[info commands ::original_show_going_to_sleep_page] ne ""} {
+            rename ::show_going_to_sleep_page ""
+            rename ::original_show_going_to_sleep_page ::show_going_to_sleep_page
+            msg -INFO [namespace current] "Restored original show_going_to_sleep_page function"
         }
 
         # Remove trace
